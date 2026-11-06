@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Private Chat</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ═══════════ LOGIN SCREEN ═══════════ -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <div class="login-icon">🔒</div>
+      <h1>Private Chat</h1>
+      <p class="subtitle">End-to-end private messaging for two</p>
+      <input type="text" id="username-input" placeholder="Enter your name" maxlength="20" autocomplete="off" />
+      <button id="join-btn">Join Chat</button>
+      <p id="login-error" class="error"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════ ROOM FULL SCREEN ═══════════ -->
+  <div id="full-screen" class="screen">
+    <div class="login-card">
+      <div class="login-icon">🚫</div>
+      <h1>Room Full</h1>
+      <p class="subtitle">This chat is private — only 2 people allowed.<br/>Try again later.</p>
+      <button onclick="location.reload()">Retry</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ CHAT SCREEN ═══════════ -->
+  <div id="chat-screen" class="screen">
+    <!-- Header -->
+    <header id="chat-header">
+      <div class="header-left">
+        <div class="header-avatar" id="partner-avatar">?</div>
+        <div class="header-info">
+          <h2 id="partner-name">Waiting for partner…</h2>
+          <span id="partner-status" class="status-text">offline</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="online-dot" id="online-dot"></span>
+      </div>
+    </header>
+
+    <!-- Messages -->
+    <main id="messages-container">
+      <div id="messages"></div>
+      <div id="typing-indicator" class="typing-hidden">
+        <span class="typing-dots"><i></i><i></i><i></i></span>
+        <span id="typing-name"></span> is typing…
+      </div>
+    </main>
+
+    <!-- Image preview overlay (before send) -->
+    <div id="image-preview-overlay" class="hidden">
+      <div class="preview-header">
+        <span id="preview-filename"></span>
+        <button id="cancel-preview" title="Cancel">✕</button>
+      </div>
+      <img id="preview-image" />
+      <div class="preview-footer">
+        <input type="text" id="image-caption" placeholder="Add a caption…" />
+        <button id="send-image-btn" title="Send">
+          <svg viewBox="0 0 24 24" width="28" height="28"><path fill="#fff" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Full-screen image viewer -->
+    <div id="image-viewer" class="hidden">
+      <img id="viewer-image" />
+      <button id="viewer-download-btn" class="viewer-download" title="Download">
+        <svg viewBox="0 0 24 24" width="32" height="32"><path fill="#fff" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      </button>
+      <button class="viewer-close" id="viewer-close-btn" title="Close">✕</button>
+    </div>
+
+    <!-- Input bar -->
+    <footer id="input-bar">
+      <label id="attach-btn" title="Send image">
+        <svg viewBox="0 0 24 24" width="26" height="26"><path fill="#8696a0" d="M1.816 15.556v.002c0 1.502.584 2.912 1.646 3.972s2.472 1.647 3.974 1.647a5.58 5.58 0 003.972-1.645l9.547-9.548c.769-.768 1.147-1.767 1.058-2.817-.079-.968-.548-1.927-1.319-2.698-1.594-1.592-4.068-1.711-5.517-.262l-7.916 7.915c-.881.881-.792 2.25.214 3.261.501.501 1.128.801 1.765.853.637.051 1.24-.157 1.698-.615l5.77-5.77c.165-.165.165-.434 0-.599l-.424-.424c-.165-.165-.434-.165-.6 0l-5.77 5.77c-.249.25-.612.3-.911.275-.369-.031-.759-.222-1.098-.561-.656-.656-.767-1.548-.328-1.986l7.915-7.917c.971-.97 2.632-.892 3.7.175.532.532.868 1.18.929 1.823.063.665-.182 1.305-.69 1.813l-9.547 9.549a3.97 3.97 0 01-2.829 1.171 3.975 3.975 0 01-2.83-1.171 3.973 3.973 0 01-1.172-2.828c0-1.071.415-2.076 1.172-2.83l7.209-7.211c.165-.165.165-.434 0-.599l-.424-.424c-.165-.165-.434-.165-.599 0l-7.21 7.21a5.577 5.577 0 00-1.645 3.971z"/></svg>
+        <input type="file" id="image-input" accept="image/*" hidden />
+      </label>
+      <div id="message-input-wrap">
+        <textarea id="message-input" placeholder="Type a message" rows="1"></textarea>
+      </div>
+      <button id="send-btn" title="Send">
+        <svg viewBox="0 0 24 24" width="28" height="28"><path fill="#8696a0" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
