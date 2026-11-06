@@ -88,15 +88,31 @@ function playNotifSound() {
   osc.start(); osc.stop(audioCtx.currentTime + 0.15);
 }
 
+// ── Service Worker for Background Notifications ──────────────────
+let swRegistration = null;
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => {
+        swRegistration = reg;
+        console.log('Service Worker registered');
+      })
+      .catch(err => console.log('SW registration error:', err));
+  });
+}
+
 // ── Chrome Browser Notifications ────────────────────────────────
-let notifPermission = Notification.permission;
+let notifPermission = ('Notification' in window) ? Notification.permission : 'denied';
 let titleBlinkInterval = null;
 const originalTitle = document.title;
 
-function requestNotifPermission() {
+async function requestNotifPermission() {
   if (!('Notification' in window)) return;
-  if (notifPermission === 'default') {
-    Notification.requestPermission().then(perm => { notifPermission = perm; });
+  try {
+    const perm = await Notification.requestPermission();
+    notifPermission = perm;
+  } catch (err) {
+    console.error('Notification permission error:', err);
   }
 }
 
@@ -133,40 +149,62 @@ function generateAvatarDataUrl(initial) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 40px Inter, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(initial.toUpperCase(), 48, 50);
+  ctx.fillText((initial || 'P').toUpperCase(), 48, 50);
   return c.toDataURL();
 }
 
-function showBrowserNotification(msg) {
-  // Only show when tab is hidden/blurred
+async function showBrowserNotification(msg) {
+  // Only show when tab is hidden or not focused
   if (document.visibilityState === 'visible' && document.hasFocus()) return;
   if (notifPermission !== 'granted') return;
 
-  const title = msg.sender;
+  const title = msg.sender || 'Private Chat';
   let body;
   if (msg.type === 'image') {
     body = msg.caption ? `📷 Photo: ${msg.caption}` : '📷 Photo';
   } else {
-    body = msg.text.length > 100 ? msg.text.substring(0, 100) + '…' : msg.text;
+    body = msg.text && msg.text.length > 100 ? msg.text.substring(0, 100) + '…' : (msg.text || '');
   }
 
-  const notif = new Notification(title, {
-    body,
-    icon: generateAvatarDataUrl(msg.sender.charAt(0)),
-    badge: generateAvatarDataUrl('💬'),
-    tag: 'private-chat-' + msg.id, // deduplicate
-    silent: true, // we already play our own sound
-    requireInteraction: false
-  });
-
-  // Click notification → focus the chat window
-  notif.onclick = () => {
-    window.focus();
-    notif.close();
+  const avatar = generateAvatarDataUrl(title.charAt(0));
+  const options = {
+    body: body,
+    icon: avatar,
+    badge: avatar,
+    tag: 'private-chat-' + (msg.id || Date.now()),
+    renotify: true,
+    requireInteraction: false,
+    vibrate: [200, 100, 200]
   };
 
-  // Auto-close after 5 seconds
-  setTimeout(() => notif.close(), 5000);
+  // 1. Try Service Worker showNotification (works in background / minimized tabs)
+  try {
+    if (swRegistration && 'showNotification' in swRegistration) {
+      await swRegistration.showNotification(title, options);
+      return;
+    }
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg && 'showNotification' in reg) {
+        await reg.showNotification(title, options);
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn('SW notification fallback to window notification', e);
+  }
+
+  // 2. Fallback to standard window Notification
+  try {
+    const notif = new Notification(title, options);
+    notif.onclick = () => {
+      window.focus();
+      notif.close();
+    };
+    setTimeout(() => notif.close(), 6000);
+  } catch (e) {
+    console.error('Notification error:', e);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -216,13 +254,20 @@ async function tryJoin() {
 
   // ── Broadcast: new message ──
   channel.on('broadcast', { event: 'new-message' }, ({ payload }) => {
-    if (payload.sender === myUsername) return; // already rendered optimistically
-    renderMessage(payload, true);
-    scrollToBottom();
-    playNotifSound();
-    showBrowserNotification(payload);
-    if (document.hidden || !document.hasFocus()) startTitleBlink(payload.sender);
-    markAsSeen(payload.id);
+    handleIncomingMessage(payload);
+  });
+
+  // ── Postgres Database Changes: ensures messages are received even if broadcast drops in background ──
+  channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+    if (payload && payload.new) {
+      handleIncomingMessage(payload.new);
+    }
+  });
+
+  channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+    if (payload && payload.new && payload.new.is_edited) {
+      updateMessageInDOM(payload.new);
+    }
   });
 
   // ── Broadcast: edit message ──
@@ -330,6 +375,40 @@ async function loadHistory() {
   const unseen = (data || []).filter(m => m.sender !== myUsername && !m.seen);
   for (const m of unseen) markAsSeen(m.id);
 }
+
+// ── Background Polling & Inactive Tab Sync ──────────────────────
+async function syncMissedMessages() {
+  if (!sb || !myUsername) return;
+  try {
+    const { data, error } = await sb
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error || !data) return;
+
+    const recent = data.reverse();
+    for (const m of recent) {
+      if (!renderedIds.has(m.id)) {
+        if (typeof handleIncomingMessage === 'function') {
+          handleIncomingMessage(m);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Sync check:', err);
+  }
+}
+
+// Poll every 6 seconds as a background safety net
+setInterval(syncMissedMessages, 6000);
+
+// Re-check immediately when tab is clicked or unhidden
+window.addEventListener('focus', syncMissedMessages);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncMissedMessages();
+});
 
 // ═══════════════════════════════════════════════════════════════
 // SEND TEXT MESSAGE
@@ -460,8 +539,21 @@ async function sendImage() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RENDER MESSAGE
+// INCOMING MESSAGE HANDLER & RENDER
 // ═══════════════════════════════════════════════════════════════
+function handleIncomingMessage(msg) {
+  if (!msg || !msg.id) return;
+  if (msg.sender === myUsername) return; // ignore our own
+  if (renderedIds.has(msg.id)) return;  // avoid duplicates
+
+  renderMessage(msg, true);
+  scrollToBottom();
+  playNotifSound();
+  showBrowserNotification(msg);
+  if (document.hidden || !document.hasFocus()) startTitleBlink(msg.sender);
+  markAsSeen(msg.id);
+}
+
 function renderMessage(msg, animate) {
   if (renderedIds.has(msg.id)) return;
   renderedIds.add(msg.id);
