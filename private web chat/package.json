@@ -1,0 +1,6 @@
+{
+  "name": "private-web-chat",
+  "version": "2.0.0",
+  "description": "Private 2-person web chat with Supabase + Vercel",
+  "private": true
+}
